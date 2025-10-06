@@ -19,12 +19,16 @@ class _LoginViewState extends State<LoginView> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
   bool _obscurePassword = true;
 
   @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -37,66 +41,12 @@ class _LoginViewState extends State<LoginView> {
         _passwordController.text,
       );
 
-      switch (result) {
-        case SignInResult.success:
-          if (authController.needsProfileCompletion) {
-            Get.offAllNamed(Routes.COMPLETE_PROFILE);
-          } else {
-            Get.offAllNamed(Routes.HOME);
-          }
-          break;
-
-        // case SignInResult.emailNotRegistered:
-        //   Get.snackbar(
-        //     'البريد الإلكتروني غير مسجل',
-        //     'هذا البريد الإلكتروني غير مسجل في النظام. يرجى إنشاء حساب جديد.',
-        //     snackPosition: SnackPosition.BOTTOM,
-        //     duration: Duration(seconds: 5),
-        //   );
-        //   break;
-
-        case SignInResult.invalidPassword:
-          Get.snackbar(
-            'الايمل او كلمة المرور خاطئة',
-            'كلمة المرور التي أدخلتها غير صحيحة. يرجى المحاولة مرة أخرى.',
-            snackPosition: SnackPosition.BOTTOM,
-            duration: Duration(seconds: 5),
-          );
-          break;
-
-        case SignInResult.emailNotVerified:
-          Get.defaultDialog(
-            title: 'البريد الإلكتروني غير مفعل',
-            content: Column(
-              children: [
-                Text('يجب تفعيل بريدك الإلكتروني قبل تسجيل الدخول.'),
-                SizedBox(height: 16),
-                Text(
-                  'يرجى التحقق من بريدك الإلكتروني والنقر على رابط التفعيل.',
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Get.back();
-                  // يمكن إضافة خيار إعادة إرسال رابط التفعيل هنا
-                  authController.resendEmailVerification();
-                },
-                child: Text('إعادة إرسال رابط التفعيل'),
-              ),
-              TextButton(onPressed: () => Get.back(), child: Text('حسناً')),
-            ],
-          );
-          break;
-
-        case SignInResult.unknownError:
-          Get.snackbar(
-            'خطأ في تسجيل الدخول',
-            'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
+      if (result) {
+        if (authController.isProfileComplete) {
+          Get.offAllNamed(Routes.HOME);
+        } else {
+          Get.offAllNamed(Routes.COMPLETE_PROFILE);
+        }
       }
     }
   }
@@ -155,7 +105,12 @@ class _LoginViewState extends State<LoginView> {
 
                       // Email field
                       CustomTextField(
+                        textInputAction: TextInputAction.next,
                         controller: _emailController,
+                        focusNode: _emailFocusNode,
+                        onFieldSubmitted: () => FocusScope.of(
+                          context,
+                        ).requestFocus(_passwordFocusNode),
                         label: 'email'.tr,
                         keyboardType: TextInputType.emailAddress,
                         validator: (value) {
@@ -173,7 +128,12 @@ class _LoginViewState extends State<LoginView> {
 
                       // Password field
                       CustomTextField(
+                        textInputAction: TextInputAction.done,
+                        focusNode: _passwordFocusNode,
                         controller: _passwordController,
+                        onFieldSubmitted: () {
+                          _login();
+                        },
                         label: 'password'.tr,
                         obscureText: _obscurePassword,
                         suffixIcon: IconButton(

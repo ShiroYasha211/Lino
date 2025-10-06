@@ -40,7 +40,7 @@ class SplashController extends GetxController
       final authController = Get.find<AuthController>();
 
       String routeName;
-      if (authController.isLoggedIn) {
+      if (authController.isLoggedIn.value) {
         routeName = authController.isProfileComplete
             ? Routes.HOME
             : Routes.COMPLETE_PROFILE;

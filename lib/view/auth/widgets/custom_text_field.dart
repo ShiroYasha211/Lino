@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 class CustomTextField extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final String label;
   final String? hint;
   final bool obscureText;
@@ -15,6 +16,8 @@ class CustomTextField extends StatelessWidget {
   final int? maxLength;
   final bool enabled;
   final TextDirection? textDirection;
+  final Function() onFieldSubmitted;
+  final TextInputAction textInputAction;
 
   const CustomTextField({
     super.key,
@@ -31,6 +34,9 @@ class CustomTextField extends StatelessWidget {
     this.maxLength,
     this.enabled = true,
     this.textDirection,
+    required this.focusNode,
+    required this.onFieldSubmitted,
+    required this.textInputAction,
   });
 
   @override
@@ -49,6 +55,7 @@ class CustomTextField extends StatelessWidget {
         SizedBox(height: 8.h),
         TextFormField(
           controller: controller,
+          focusNode: focusNode,
           obscureText: obscureText,
           keyboardType: keyboardType,
           validator: validator,
@@ -56,7 +63,9 @@ class CustomTextField extends StatelessWidget {
           maxLines: maxLines,
           maxLength: maxLength,
           enabled: enabled,
+          textInputAction: textInputAction,
           textDirection: textDirection,
+          onFieldSubmitted: (_) => onFieldSubmitted(),
           style: TextStyle(fontSize: 16.sp, fontFamily: 'Cairo'),
           decoration: InputDecoration(
             hintText: hint ?? label,

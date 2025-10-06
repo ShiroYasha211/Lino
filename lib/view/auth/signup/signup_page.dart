@@ -20,6 +20,10 @@ class _SignupPageState extends State<SignupPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _emailFocusNode = FocusNode();
+  final _passwordFocusNode = FocusNode();
+  final _confirmPasswordFocusNode = FocusNode();
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
@@ -28,6 +32,9 @@ class _SignupPageState extends State<SignupPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _confirmPasswordFocusNode.dispose();
     super.dispose();
   }
 
@@ -35,52 +42,10 @@ class _SignupPageState extends State<SignupPage> {
     if (_formKey.currentState!.validate()) {
       final authController = Get.find<AuthController>();
 
-      final result = await authController.signUp(
+      await authController.signUp(
         _emailController.text.trim(),
         _passwordController.text,
       );
-
-      switch (result) {
-        case SignUpResult.success:
-          // الانتقال إلى صفحة تأكيد البريد بدلاً من إكمال البروفايل
-          Get.offAllNamed(
-            Routes.VERIFY_EMAIL,
-            arguments: {'email': _emailController.text.trim()},
-          );
-          break;
-
-        case SignUpResult.emailAlreadyExists:
-          Get.snackbar(
-            'البريد الإلكتروني موجود بالفعل',
-            'هذا البريد الإلكتروني مسجل مسبقاً. يرجى تسجيل الدخول أو استخدام بريد آخر.',
-            snackPosition: SnackPosition.BOTTOM,
-            duration: Duration(seconds: 5),
-            mainButton: TextButton(
-              onPressed: () {
-                Get.back();
-                Get.toNamed(Routes.LOGIN);
-              },
-              child: Text('تسجيل الدخول'),
-            ),
-          );
-          break;
-
-        case SignUpResult.emailNotVerified:
-          // في حالة التسجيل الناجح ولكن البريد يحتاج تفعيل
-          Get.offAllNamed(
-            Routes.VERIFY_EMAIL,
-            arguments: {'email': _emailController.text.trim()},
-          );
-          break;
-
-        case SignUpResult.unknownError:
-          Get.snackbar(
-            'خطأ في إنشاء الحساب',
-            'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
-      }
     }
   }
 
@@ -94,10 +59,10 @@ class _SignupPageState extends State<SignupPage> {
           padding: EdgeInsets.all(24.w),
           child: Form(
             key: _formKey,
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  SingleChildScrollView(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -141,6 +106,14 @@ class _SignupPageState extends State<SignupPage> {
 
                         // Email field
                         CustomTextField(
+                          textInputAction: TextInputAction.next,
+                          focusNode: _emailFocusNode,
+                          onFieldSubmitted: () {
+                            FocusScope.of(
+                              context,
+                            ).requestFocus(_passwordFocusNode);
+                          },
+
                           controller: _emailController,
                           label: 'email'.tr,
                           keyboardType: TextInputType.emailAddress,
@@ -159,6 +132,13 @@ class _SignupPageState extends State<SignupPage> {
 
                         // Password field
                         CustomTextField(
+                          textInputAction: TextInputAction.next,
+                          focusNode: _passwordFocusNode,
+                          onFieldSubmitted: () {
+                            FocusScope.of(
+                              context,
+                            ).requestFocus(_confirmPasswordFocusNode);
+                          },
                           controller: _passwordController,
                           label: 'password'.tr,
                           obscureText: _obscurePassword,
@@ -189,6 +169,9 @@ class _SignupPageState extends State<SignupPage> {
 
                         // Confirm password field
                         CustomTextField(
+                          textInputAction: TextInputAction.done,
+                          focusNode: _confirmPasswordFocusNode,
+                          onFieldSubmitted: _signUp,
                           controller: _confirmPasswordController,
                           label: 'confirm_password'.tr,
                           obscureText: _obscureConfirmPassword,
@@ -229,22 +212,25 @@ class _SignupPageState extends State<SignupPage> {
                       ],
                     ),
                   ),
-                ),
 
-                // Login link
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('already_have_account'.tr, style: AppTheme.bodyMedium),
-                    TextButton(
-                      onPressed: () {
-                        Get.offNamed(Routes.LOGIN);
-                      },
-                      child: Text('login'.tr),
-                    ),
-                  ],
-                ),
-              ],
+                  // Login link
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'already_have_account'.tr,
+                        style: AppTheme.bodyMedium,
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Get.offNamed(Routes.LOGIN);
+                        },
+                        child: Text('login'.tr),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

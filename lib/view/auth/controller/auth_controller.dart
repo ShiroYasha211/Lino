@@ -1,21 +1,23 @@
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/models/user_model.dart';
 import '../../../core/router/app_pages.dart';
+import '../../../core/themes/app_theme.dart';
 
 class AuthController extends GetxController {
   final _isLoading = false.obs;
   final _isLoggedIn = false.obs;
   final _currentUser = Rxn<UserModel>();
   final _isProfileComplete = false.obs;
-  final _isEmailVerified = false.obs;
+  final RxString _errorMessage = ''.obs;
 
   bool get isLoading => _isLoading.value;
-  bool get isLoggedIn => _isLoggedIn.value;
+  Rx<bool> get isLoggedIn => _isLoggedIn;
   UserModel? get currentUser => _currentUser.value;
   bool get isProfileComplete => _isProfileComplete.value;
-  bool get isEmailVerified => _isEmailVerified.value;
+  String get errorMessage => _errorMessage.value;
 
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -26,20 +28,20 @@ class AuthController extends GetxController {
     _setupAuthListener();
   }
 
+  // Check initial auth state
   void _checkAuthState() {
     final user = _supabase.auth.currentUser;
     _isLoggedIn.value = user != null;
-    _isEmailVerified.value = user?.emailConfirmedAt != null;
     if (user != null) {
       _loadUserProfile();
     }
   }
 
+  // Listen to auth state changes
   void _setupAuthListener() {
     _supabase.auth.onAuthStateChange.listen((data) {
       final user = data.session?.user;
       _isLoggedIn.value = user != null;
-      _isEmailVerified.value = user?.emailConfirmedAt != null;
 
       if (user != null) {
         _loadUserProfile();
@@ -62,63 +64,17 @@ class AuthController extends GetxController {
           .single();
 
       _currentUser.value = UserModel.fromMap(response);
-      _checkProfileCompletion(_currentUser.value!);
+      _isProfileComplete.value = true;
     } catch (e) {
       _isProfileComplete.value = false;
     }
   }
 
-  void _checkProfileCompletion(UserModel user) {
-    final isComplete =
-        user.fullName.isNotEmpty &&
-        user.username.isNotEmpty &&
-        _isValidUsername(user.username);
-
-    _isProfileComplete.value = isComplete;
-  }
-
-  bool _isValidUsername(String username) {
-    // التحقق من أن اسم المستخدم يتبع المعايير الصحيحة
-    final usernameRegex = RegExp(r'^[a-zA-Z0-9_]+$');
-    return username.length >= 3 &&
-        username.length <= 20 &&
-        usernameRegex.hasMatch(username);
-  }
-
-  String? validateUsername(String username) {
-    if (username.isEmpty) {
-      return 'اسم المستخدم مطلوب';
-    }
-    if (username.length < 3) {
-      return 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل';
-    }
-    if (username.length > 20) {
-      return 'اسم المستخدم يجب أن لا يتجاوز 20 حرف';
-    }
-    if (!_isValidUsername(username)) {
-      return 'اسم المستخدم يجب أن يحتوي على أحرف إنجليزية وأرقام و _ فقط';
-    }
-    if (username.contains(' ')) {
-      return 'اسم المستخدم يجب ألا يحتوي على فراغات';
-    }
-    return null;
-  }
-
   // Sign in with email and password
-  Future<SignInResult> signIn(String email, String password) async {
+  Future<bool> signIn(String email, String password) async {
     try {
       _isLoading.value = true;
-
-      // // التحقق أولاً من وجود البريد الإلكتروني في جدول البروفايل
-      // final profileResponse = await _supabase
-      //     .from('profiles')
-      //     .select('id')
-      //     .eq('email', email)
-      //     .maybeSingle();
-
-      // if (profileResponse == null) {
-      //   return SignInResult.emailNotRegistered;
-      // }
+      _errorMessage.value = '';
 
       final response = await _supabase.auth.signInWithPassword(
         email: email,
@@ -126,120 +82,66 @@ class AuthController extends GetxController {
       );
 
       if (response.user != null) {
-        if (response.user!.emailConfirmedAt == null) {
-          return SignInResult.emailNotVerified;
-        }
-
         await _loadUserProfile();
-        return SignInResult.success;
+        return true;
       }
 
-      return SignInResult.unknownError;
+      return false;
     } on AuthException catch (e) {
-      if (e.message.contains('Invalid login credentials')) {
-        return SignInResult.invalidPassword;
-      } else if (e.message.contains('Email not confirmed')) {
-        return SignInResult.emailNotVerified;
+      _errorMessage.value = _getErrorMessage(e.message);
+      if (_errorMessage.value == "Email not confirmed") {
+        verifiedEmailDialog(email);
       } else {
         Get.snackbar(
           'خطأ في تسجيل الدخول',
-          e.message,
+          _errorMessage.value,
           snackPosition: SnackPosition.BOTTOM,
         );
-        return SignInResult.unknownError;
       }
+      return false;
     } catch (e) {
       Get.snackbar(
         'خطأ في تسجيل الدخول',
-        'حدث خطأ غير متوقع',
+        e.toString(),
         snackPosition: SnackPosition.BOTTOM,
       );
-      return SignInResult.unknownError;
+      return false;
     } finally {
       _isLoading.value = false;
     }
   }
 
   // Sign up with email and password
-  // في دالة signUp، تأكد من أن return type هو SignUpResult
-  Future<SignUpResult> signUp(String email, String password) async {
+  Future<bool> signUp(String email, String password) async {
     try {
       _isLoading.value = true;
-
-      // التحقق من وجود البريد الإلكتروني مسبقاً
-      final existingUser = await _supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle();
-
-      if (existingUser != null) {
-        return SignUpResult.emailAlreadyExists;
-      }
-
       final response = await _supabase.auth.signUp(
         email: email,
         password: password,
-        data: {'email': email},
       );
-
-      if (response.user != null) {
-        // إنشاء بروفايل أساسي فوراً
-        await _createBasicProfile(response.user!.id, email);
-
-        // إذا كان هناك session مباشرة (مفعل مباشرة)
-        if (response.session != null) {
-          _isEmailVerified.value = true;
-          await _loadUserProfile();
-          return SignUpResult.success;
-        } else {
-          // إذا لم يكن هناك session، يحتاج تفعيل البريد
-          _isEmailVerified.value = false;
-          return SignUpResult.emailNotVerified;
-        }
-      }
-
-      return SignUpResult.unknownError;
+      completeSignUpDialog(email);
+      return response.user != null;
     } on AuthException catch (e) {
-      if (e.message.contains('User already registered')) {
-        return SignUpResult.emailAlreadyExists;
-      } else {
-        Get.snackbar(
-          'خطأ في إنشاء الحساب',
-          e.message,
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return SignUpResult.unknownError;
-      }
+      Get.snackbar(
+        'خطأ في إنشاء الحساب',
+        _getErrorMessage(e.message),
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return false;
     } catch (e) {
       Get.snackbar(
         'خطأ في إنشاء الحساب',
-        'حدث خطأ غير متوقع',
+        e.toString(),
         snackPosition: SnackPosition.BOTTOM,
       );
-      return SignUpResult.unknownError;
+      return false;
     } finally {
       _isLoading.value = false;
     }
   }
 
-  Future<void> _createBasicProfile(String userId, String email) async {
-    try {
-      final basicProfile = {
-        'id': userId,
-        'email': email,
-        'created_at': DateTime.now().toIso8601String(),
-        'updated_at': DateTime.now().toIso8601String(),
-      };
-
-      await _supabase.from('profiles').insert(basicProfile);
-    } catch (e) {
-      print('Error creating basic profile: $e');
-    }
-  }
-
   // Complete user profile
-  Future<ProfileCompletionResult> completeProfile({
+  Future<bool> completeProfile({
     required String fullName,
     required String username,
     String? bio,
@@ -249,56 +151,32 @@ class AuthController extends GetxController {
       _isLoading.value = true;
 
       final userId = _supabase.auth.currentUser?.id;
-      if (userId == null) return ProfileCompletionResult.userNotFound;
-
-      // التحقق من صحة اسم المستخدم
-      final usernameValidation = validateUsername(username);
-      if (usernameValidation != null) {
-        Get.snackbar(
-          'خطأ في اسم المستخدم',
-          usernameValidation,
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return ProfileCompletionResult.invalidUsername;
-      }
-
-      // التحقق من توفر اسم المستخدم
-      final isAvailable = await isUsernameAvailable(username);
-      if (!isAvailable) {
-        return ProfileCompletionResult.usernameTaken;
-      }
-
-      // التحقق من صحة الاسم الكامل
-      if (fullName.isEmpty || fullName.length < 2) {
-        Get.snackbar(
-          'خطأ في الاسم الكامل',
-          'الاسم الكامل مطلوب ويجب أن يكون على الأقل حرفين',
-          snackPosition: SnackPosition.BOTTOM,
-        );
-        return ProfileCompletionResult.invalidFullName;
-      }
+      if (userId == null) return false;
 
       final profileData = {
+        'id': userId,
         'full_name': fullName,
-        'username': username.toLowerCase(),
-        'email': _supabase.auth.currentUser?.email,
+        'username': username,
         'bio': bio ?? '',
+        'email': _supabase.auth.currentUser!.email,
         'avatar_url': avatarUrl,
+        'created_at': DateTime.now().toIso8601String(),
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-      await _supabase.from('profiles').update(profileData).eq('id', userId);
+      await _supabase.from('profiles').insert(profileData);
 
-      await _loadUserProfile();
+      _currentUser.value = UserModel.fromMap(profileData);
+      _isProfileComplete.value = true;
 
-      return ProfileCompletionResult.success;
+      return true;
     } catch (e) {
       Get.snackbar(
         'خطأ في إكمال الملف الشخصي',
         e.toString(),
         snackPosition: SnackPosition.BOTTOM,
       );
-      return ProfileCompletionResult.unknownError;
+      return false;
     } finally {
       _isLoading.value = false;
     }
@@ -307,40 +185,13 @@ class AuthController extends GetxController {
   // Check if username is available
   Future<bool> isUsernameAvailable(String username) async {
     try {
-      if (username.length < 3) return false;
+      final response = await _supabase.rpc(
+        'is_username_available',
+        params: {'username_to_check': username},
+      );
 
-      final response = await _supabase
-          .from('profiles')
-          .select('username')
-          .eq('username', username.toLowerCase())
-          .maybeSingle();
-
-      return response == null;
+      return response as bool;
     } catch (e) {
-      return false;
-    }
-  }
-
-  // Resend email verification
-  Future<bool> resendEmailVerification() async {
-    try {
-      await _supabase.auth.resend(
-        type: OtpType.signup,
-        email: _supabase.auth.currentUser?.email,
-      );
-
-      Get.snackbar(
-        'تم إرسال رابط التفعيل',
-        'تم إرسال رابط تفعيل الحساب إلى بريدك الإلكتروني',
-        snackPosition: SnackPosition.BOTTOM,
-      );
-      return true;
-    } catch (e) {
-      Get.snackbar(
-        'خطأ في إرسال رابط التفعيل',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-      );
       return false;
     }
   }
@@ -375,18 +226,13 @@ class AuthController extends GetxController {
         'updated_at': DateTime.now().toIso8601String(),
       };
 
-      if (fullName != null) {
-        if (fullName.isEmpty || fullName.length < 2) {
-          throw Exception('الاسم الكامل مطلوب ويجب أن يكون على الأقل حرفين');
-        }
-        updateData['full_name'] = fullName;
-      }
-
+      if (fullName != null) updateData['full_name'] = fullName;
       if (bio != null) updateData['bio'] = bio;
       if (avatarUrl != null) updateData['avatar_url'] = avatarUrl;
 
       await _supabase.from('profiles').update(updateData).eq('id', userId);
 
+      // Reload profile
       await _loadUserProfile();
 
       return true;
@@ -402,63 +248,280 @@ class AuthController extends GetxController {
     }
   }
 
-  // Check if user needs profile completion
-  bool get needsProfileCompletion {
-    return isLoggedIn && !isProfileComplete;
+  // Helper to get user-friendly error messages
+  String _getErrorMessage(String message) {
+    const errorMap = {
+      'Invalid login credentials': 'بيانات الدخول غير صحيحة',
+      'User is banned': 'المستخدم محظور',
+      'User already registered': 'المستخدم مسجل بالفعل',
+      'Weak password': 'كلمة المرور ضعيفة',
+      'Connection closed': 'خطاء فى الشبكه حاول مجددا',
+    };
+
+    return errorMap[message] ?? message;
   }
 
-  Future<void> reloadUser() async {
+  // Dialog to inform user to verify their email
+  void verifiedEmailDialog(String email) {
+    Get.dialog(
+      Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.email_outlined,
+                  size: 40,
+                  color: Colors.orange,
+                ),
+              ),
+
+              SizedBox(height: 16),
+
+              Text(
+                'تفعيل البريد المطلوب',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+
+              SizedBox(height: 16),
+
+              Text(
+                'يجب تفعيل بريدك الإلكتروني قبل تسجيل الدخول. تم إرسال رابط التفعيل إلى',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[700]),
+              ),
+
+              SizedBox(height: 8),
+
+              Text(
+                email,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primaryColor,
+                ),
+              ),
+
+              SizedBox(height: 16),
+
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'تحقق من مجلد الرسائل غير المرغوب فيها إذا لم تجد البريد',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: 24),
+
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Get.back(),
+                      child: Text('إلغاء'),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Get.back();
+                        _resendVerificationEmail(email);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                      ),
+                      child: Text(
+                        'إعادة الإرسال',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: false,
+    );
+  }
+
+  // Dialog to inform user that sign up is complete
+  void completeSignUpDialog(email) {
+    Get.dialog(
+      Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.check, size: 40, color: Colors.green),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'تم إنشاء الحساب بنجاح',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
+              Text(
+                'تم إنشاء حسابك بنجاح..',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[700]),
+              ),
+              Text(
+                'يجب تفعيل بريدك الإلكتروني قبل تسجيل الدخول. تم إرسال رابط التفعيل إلى',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey[700]),
+              ),
+
+              SizedBox(height: 8),
+
+              Text(
+                email,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primaryColor,
+                ),
+              ),
+
+              SizedBox(height: 16),
+
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'تحقق من مجلد الرسائل غير المرغوب فيها إذا لم تجد البريد',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Get.back();
+                  Get.offAllNamed(Routes.LOGIN);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                ),
+                child: Text('تسجيل الدخول'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: false,
+    );
+  }
+
+  // Resend verification email
+  Future<void> _resendVerificationEmail(String email) async {
     try {
-      await _supabase.auth.refreshSession();
-      final user = _supabase.auth.currentUser;
-      _isEmailVerified.value = user?.emailConfirmedAt != null;
-      if (user != null) {
-        await _loadUserProfile();
-      }
+      // عرض مؤشر تحميل
+      Get.dialog(
+        Center(child: CircularProgressIndicator()),
+        barrierDismissible: false,
+      );
+
+      // إعادة إرسال رابط التفعيل
+      await _supabase.auth.resend(type: OtpType.signup, email: email);
+
+      // إغلاق مؤشر التحميل
+      Get.back();
+
+      // عرض رسالة نجاح
+      Get.dialog(
+        AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.green),
+              SizedBox(width: 8),
+              Text('تم الإرسال'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'تم إعادة إرسال رابط التفعيل إلى بريدك الإلكتروني بنجاح.',
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 8),
+              Text(
+                email,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: AppTheme.primaryColor,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Get.back(),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: Text('حسناً'),
+            ),
+          ],
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        barrierDismissible: false,
+      );
     } catch (e) {
-      print('Error reloading user: $e');
+      // إغلاق مؤشر التحميل في حالة الخطأ
+      Get.back();
+
+      Get.snackbar(
+        'خطأ في إرسال رابط التفعيل',
+        'فشل في إعادة إرسال رابط التفعيل. يرجى المحاولة مرة أخرى.',
+        snackPosition: SnackPosition.BOTTOM,
+      );
     }
   }
-
-  // إعداد مستمع لتغيرات حالة التفعيل
-  void setupEmailVerificationListener(Function(User? user) onEmailVerified) {
-    _supabase.auth.onAuthStateChange.listen((data) {
-      final user = data.session?.user;
-      final emailConfirmed = user?.emailConfirmedAt != null;
-
-      _isEmailVerified.value = emailConfirmed;
-
-      if (emailConfirmed) {
-        onEmailVerified(user);
-      }
-    });
-  }
-}
-
-// نتائج تسجيل الدخول
-enum SignInResult {
-  success,
-  //emailNotRegistered,
-  invalidPassword,
-  emailNotVerified,
-  unknownError,
-}
-
-// نتائج إنشاء الحساب
-
-enum SignUpResult {
-  success, // نجح وإنشاء session مباشرة
-  emailAlreadyExists, // البريد موجود مسبقاً
-  emailNotVerified, // نجح ولكن يحتاج تفعيل البريد
-  unknownError,
-}
-
-// نتائج إكمال البروفايل
-enum ProfileCompletionResult {
-  success,
-  usernameTaken,
-  invalidUsername,
-  invalidFullName,
-  userNotFound,
-  unknownError,
 }

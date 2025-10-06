@@ -24,6 +24,9 @@ class _CompleteProfileState extends State<CompleteProfile> {
   final _fullNameController = TextEditingController();
   final _usernameController = TextEditingController();
   final _bioController = TextEditingController();
+  final FocusNode _fullNameFocusNode = FocusNode();
+  final FocusNode _usernameFocusNode = FocusNode();
+  final FocusNode _bioFocusNode = FocusNode();
 
   File? _selectedImage;
   bool _isUsernameChecking = false;
@@ -34,6 +37,9 @@ class _CompleteProfileState extends State<CompleteProfile> {
     _fullNameController.dispose();
     _usernameController.dispose();
     _bioController.dispose();
+    _fullNameFocusNode.dispose();
+    _usernameFocusNode.dispose();
+    _bioFocusNode.dispose();
     super.dispose();
   }
 
@@ -98,9 +104,11 @@ class _CompleteProfileState extends State<CompleteProfile> {
           Get.back(); // إغلاق مؤشر التحميل في حالة الخطأ
           Get.snackbar(
             'خطأ في رفع الصورة',
-            'فشل في رفع الصورة. يرجى المحاولة مرة أخرى.',
+            'فشل في رفع الصورة. يرجى المحاولة مرة أخرى. ',
+
             snackPosition: SnackPosition.BOTTOM,
           );
+          debugPrint('Error uploading image: $e');
           return;
         }
       }
@@ -111,47 +119,14 @@ class _CompleteProfileState extends State<CompleteProfile> {
         bio: _bioController.text.trim(),
         avatarUrl: avatarUrl,
       );
-
-      switch (result) {
-        case ProfileCompletionResult.success:
-          Get.offAllNamed(Routes.HOME);
-          break;
-
-        case ProfileCompletionResult.usernameTaken:
-          Get.snackbar(
-            'اسم المستخدم محجوز',
-            'اسم المستخدم هذا مستخدم بالفعل. يرجى اختيار اسم آخر.',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
-
-        case ProfileCompletionResult.invalidUsername:
-          // الرسالة تظهر بالفعل من داخل الـ controller
-          break;
-
-        case ProfileCompletionResult.invalidFullName:
-          Get.snackbar(
-            'خطأ في الاسم الكامل',
-            'الاسم الكامل مطلوب ويجب أن يكون على الأقل حرفين',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
-
-        case ProfileCompletionResult.userNotFound:
-          Get.snackbar(
-            'خطأ في المصادقة',
-            'لم يتم العثور على بيانات المستخدم. يرجى تسجيل الدخول مرة أخرى.',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
-
-        case ProfileCompletionResult.unknownError:
-          Get.snackbar(
-            'خطأ في إكمال الملف الشخصي',
-            'حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى.',
-            snackPosition: SnackPosition.BOTTOM,
-          );
-          break;
+      if (result) {
+        Get.offAllNamed(Routes.HOME);
+      } else {
+        Get.snackbar(
+          'خطأ',
+          'فشل في إكمال الملف الشخصي. يرجى المحاولة مرة أخرى.',
+          snackPosition: SnackPosition.BOTTOM,
+        );
       }
     }
   }
@@ -161,16 +136,12 @@ class _CompleteProfileState extends State<CompleteProfile> {
     final authController = Get.find<AuthController>();
     final userId = authController.currentUser?.id;
 
-    if (userId == null) {
-      throw Exception('لم يتم العثور على معرف المستخدم');
-    }
-
     // إنشاء اسم فريد للصورة
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final fileName = 'avatar_${userId}_$timestamp.jpg';
 
     // رفع الصورة إلى bucket الـ avatars
-    final response = await Supabase.instance.client.storage
+    await Supabase.instance.client.storage
         .from('avatars') // اسم البوكت
         .upload(
           fileName,
@@ -199,10 +170,10 @@ class _CompleteProfileState extends State<CompleteProfile> {
           padding: EdgeInsets.all(24.w),
           child: Form(
             key: _formKey,
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  SingleChildScrollView(
                     child: Column(
                       children: [
                         SizedBox(height: 20.h),
@@ -283,6 +254,13 @@ class _CompleteProfileState extends State<CompleteProfile> {
 
                         // Full name field
                         CustomTextField(
+                          focusNode: _fullNameFocusNode,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: () {
+                            FocusScope.of(
+                              context,
+                            ).requestFocus(_usernameFocusNode);
+                          },
                           controller: _fullNameController,
                           label: 'full_name'.tr,
                           validator: (value) {
@@ -300,6 +278,11 @@ class _CompleteProfileState extends State<CompleteProfile> {
 
                         // Username field
                         CustomTextField(
+                          focusNode: _usernameFocusNode,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: () {
+                            FocusScope.of(context).requestFocus(_bioFocusNode);
+                          },
                           controller: _usernameController,
                           label: 'username'.tr,
                           hint: 'username_example',
@@ -358,6 +341,9 @@ class _CompleteProfileState extends State<CompleteProfile> {
 
                         // Bio field
                         CustomTextField(
+                          textInputAction: TextInputAction.done,
+                          focusNode: _bioFocusNode,
+                          onFieldSubmitted: _completeProfile,
                           controller: _bioController,
                           label: 'bio'.tr,
                           hint: 'نبذة قصيرة عنك (اختياري)',
@@ -369,17 +355,17 @@ class _CompleteProfileState extends State<CompleteProfile> {
                       ],
                     ),
                   ),
-                ),
 
-                // Complete button
-                Obx(
-                  () => CustomButton(
-                    text: 'done'.tr,
-                    isLoading: authController.isLoading,
-                    onPressed: _completeProfile,
+                  // Complete button
+                  Obx(
+                    () => CustomButton(
+                      text: 'done'.tr,
+                      isLoading: authController.isLoading,
+                      onPressed: _completeProfile,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
