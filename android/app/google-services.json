@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "118996208171",
+    "project_id": "lino-app-25932",
+    "storage_bucket": "lino-app-25932.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:118996208171:android:5ecfdf5fa6a19352d8786e",
+        "android_client_info": {
+          "package_name": "com.mohammed.lino_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPmO41fZ0lvkE8TaOiH-LY61R_uiThfxk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
